@@ -156,8 +156,6 @@ DEFAULT_ALPN_BY_PROTOCOL = {
 }
 DEFAULT_PORT = 443
 MIN_PORT, MAX_PORT = 1, 65535
-# ⭐ IP ثابت برای همه‌ی کانفیگ‌ها (به‌جای دامنه)
-FORCED_ADDRESS = "69.46.46.165"
 
 # محدودیت سرعت (0 = نامحدود). واحد ذخیره‌سازی داخلی همیشه بایت‌بر‌ثانیه است.
 DEFAULT_SPEED_LIMIT = 0
@@ -304,15 +302,10 @@ def generate_vless_link(
     return f"vless://{uuid}@{host}:{port_val}?{query}#{quote(remark)}"
 
 def vless_link_for_link(link: dict, uid: str, host: str) -> str:
-    """generate_vless_link رو با تنظیمات دستی همون کانفیگ (fingerprint/alpn/port) صدا می‌زنه.
-    
-    ⭐ همه‌ی کانفیگ‌ها با FORCED_ADDRESS (IP ثابت) ساخته می‌شن، نه دامنه.
-    """
+    """generate_vless_link رو با تنظیمات دستی همون کانفیگ (fingerprint/alpn/port) صدا می‌زنه."""
     proto = link.get("protocol", DEFAULT_PROTOCOL)
-    # ⭐ از IP ثابت استفاده کن، نه دامنه
-    addr = FORCED_ADDRESS if FORCED_ADDRESS else host
     return generate_vless_link(
-        uid, addr,
+        uid, host,
         remark=link.get('label','') or "Gateway",
         protocol=proto,
         fingerprint=link.get("fingerprint"),
@@ -320,26 +313,17 @@ def vless_link_for_link(link: dict, uid: str, host: str) -> str:
         port=link.get("port"),
     )
 
+
 def vless_links_with_clean_ips(link: dict, uid: str, host: str) -> list[str]:
-    """برای هر آدرس (IP ثابت + Clean IPها) یه کانفیگ می‌سازه.
-    
-    ⭐ host اصلی (دامنه) استفاده نمی‌شه — فقط IP ثابت و Clean IPها.
-    """
-    addresses = []
-    # اول IP ثابت
-    if FORCED_ADDRESS:
-        addresses.append(FORCED_ADDRESS)
-    # بعد Clean IPها
+    """برای هر آدرس (host اصلی + همه Clean IPها) یه کانفیگ می‌سازه."""
+    addresses = [host]
+    # اضافه کردن Clean IPها (بدون تکرار)
     try:
         for addr in list(CLEAN_IPS):
-            if addr and addr not in addresses:
+            if addr and addr != host and addr not in addresses:
                 addresses.append(addr)
     except Exception:
         pass
-    
-    # اگه هیچ آدرسی نبود، از host استفاده کن (fallback)
-    if not addresses:
-        addresses.append(host)
     
     links = []
     for addr in addresses:
