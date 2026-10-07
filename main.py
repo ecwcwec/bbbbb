@@ -155,6 +155,7 @@ DEFAULT_ALPN_BY_PROTOCOL = {
     "xhttp-stream-one": "h2,http/1.1",
 }
 DEFAULT_PORT = 443
+DEFAULT_CONNECT_IP = "69.46.46.240"
 MIN_PORT, MAX_PORT = 1, 65535
 
 # محدودیت سرعت (0 = نامحدود). واحد ذخیره‌سازی داخلی همیشه بایت‌بر‌ثانیه است.
@@ -301,6 +302,8 @@ def generate_vless_link(
         }
     query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
     addr = connect_addr if connect_addr else host
+     # آدرس اتصال: اگه connect_addr داده شده از اون، وگرنه از DEFAULT_CONNECT_IP
+    addr = connect_addr if connect_addr else (DEFAULT_CONNECT_IP or host)
     return f"vless://{uuid}@{addr}:{port_val}?{query}#{quote(remark)}"
 
 def vless_link_for_link(link: dict, uid: str, host: str, connect_addr: str | None = None) -> str:
@@ -318,22 +321,23 @@ def vless_link_for_link(link: dict, uid: str, host: str, connect_addr: str | Non
 
 
 def vless_links_with_clean_ips(link: dict, uid: str, host: str) -> list[str]:
-    """برای هر آدرس (host اصلی + همه Clean IPها) یه کانفیگ می‌سازه.
+    """برای هر آدرس (IP پیش‌فرض + Clean IPهای اضافه) یه کانفیگ می‌سازه.
     
     SNI و Host header همیشه host (دامنه اصلی) می‌مونن، فقط آدرس اتصال عوض می‌شه.
     """
-    links = [vless_link_for_link(link, uid, host, connect_addr=host)]
+    # کانفیگ اول: با IP پیش‌فرض
+    links = [vless_link_for_link(link, uid, host, connect_addr=DEFAULT_CONNECT_IP)]
     
+    # بقیه: با Clean IPهایی که ادمین اضافه کرده
     try:
         for addr in list(CLEAN_IPS):
-            if addr and addr != host:
+            if addr and addr != host and addr != DEFAULT_CONNECT_IP:
                 l = vless_link_for_link(link, uid, host, connect_addr=addr)
                 links.append(l)
     except Exception:
         pass
     
     return links
-
 
 def uptime() -> str:
     secs = int(time.time() - stats["start_time"])
