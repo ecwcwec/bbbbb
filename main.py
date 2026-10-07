@@ -262,11 +262,8 @@ def generate_vless_link(
     port: int | None = None,
     connect_addr: str | None = None,
 ) -> str:
-    """generate_vless_link رو با تنظیمات دستی همون کانفیگ (fingerprint/alpn/port) صدا می‌زنه.
-    
-    connect_addr: آدرسی که کلاینت بهش وصل می‌شه (می‌تونه Clean IP باشه).
-    اگه None باشه، از host استفاده می‌کنه. SNI و Host header همیشه host (دامنه اصلی) می‌مونن.
-    """
+    """می‌سازد VLESS share-link متناسب با پروتکل انتخاب‌شده (WS کلاسیک یا یکی از مدهای XHTTP).
+    fingerprint / alpn / port در صورت ندادن، از پیش‌فرض‌های خود پروتکل استفاده می‌شوند."""
     fp = (fingerprint or DEFAULT_FINGERPRINT).strip() or DEFAULT_FINGERPRINT
     if fp not in FINGERPRINTS:
         fp = DEFAULT_FINGERPRINT
@@ -274,9 +271,6 @@ def generate_vless_link(
     port_val = port or DEFAULT_PORT
     if not (MIN_PORT <= port_val <= MAX_PORT):
         port_val = DEFAULT_PORT
-
-    # آدرس اتصال (ممکنه Clean IP باشه) جدا از SNI/Host
-    addr = connect_addr if connect_addr else host
 
     if protocol == "vless-ws":
         path = f"/ws/{uuid}"
@@ -291,7 +285,8 @@ def generate_vless_link(
             "alpn": alpn_val,
         }
     else:
-        mode = protocol.replace("xhttp-", "")
+        # xhttp-packet-up / xhttp-stream-up / xhttp-stream-one
+        mode = protocol.replace("xhttp-", "")  # packet-up | stream-up | stream-one
         path = f"/xhttp-siz10/{mode}/{uuid}"
         params = {
             "encryption": "none",
@@ -305,11 +300,11 @@ def generate_vless_link(
             "alpn": alpn_val,
         }
     query = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+    addr = connect_addr if connect_addr else host
     return f"vless://{uuid}@{addr}:{port_val}?{query}#{quote(remark)}"
 
-
-def vless_link_for_link_with_addr(link: dict, uid: str, host: str, connect_addr: str) -> str:
-    """مثل vless_link_for_link ولی با آدرس اتصال جدا از دامنه اصلی (برای Clean IP)."""
+def vless_link_for_link(link: dict, uid: str, host: str, connect_addr: str | None = None) -> str:
+    """generate_vless_link رو با تنظیمات دستی همون کانفیگ (fingerprint/alpn/port) صدا می‌زنه."""
     proto = link.get("protocol", DEFAULT_PROTOCOL)
     return generate_vless_link(
         uid, host,
@@ -324,14 +319,15 @@ def vless_link_for_link_with_addr(link: dict, uid: str, host: str, connect_addr:
 
 def vless_links_with_clean_ips(link: dict, uid: str, host: str) -> list[str]:
     """برای هر آدرس (host اصلی + همه Clean IPها) یه کانفیگ می‌سازه.
-    SNI و Host header همیشه host (دامنه اصلی) می‌مونن، آدرس اتصال Clean IP می‌شه."""
-    links = [vless_link_for_link_with_addr(link, uid, host, host)]
     
-    # Clean IPها (به‌عنوان آدرس اتصال، با همون SNI دامنه اصلی)
+    SNI و Host header همیشه host (دامنه اصلی) می‌مونن، فقط آدرس اتصال عوض می‌شه.
+    """
+    links = [vless_link_for_link(link, uid, host, connect_addr=host)]
+    
     try:
         for addr in list(CLEAN_IPS):
             if addr and addr != host:
-                l = vless_link_for_link_with_addr(link, uid, host, addr)
+                l = vless_link_for_link(link, uid, host, connect_addr=addr)
                 links.append(l)
     except Exception:
         pass
