@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import hashlib
+import re
 import secrets
 import time
 import aiofiles
@@ -93,9 +94,11 @@ async def load_state():
             data = json.loads(raw)
             LINKS.update(data.get("links", {}))
             SUBS.update(data.get("subs", {}))
+            CLEAN_IPS.clear()
+            CLEAN_IPS.extend(data.get("clean_ips", []))
             if "password_hash" in data:
                 AUTH["password_hash"] = data["password_hash"]
-            logger.info(f"State loaded: {len(LINKS)} links, {len(SUBS)} subs")
+            logger.info(f"State loaded: {len(LINKS)} links, {len(SUBS)} subs, {len(CLEAN_IPS)} clean IPs")
     except Exception as e:
         logger.warning(f"Could not load state: {e}")
 
@@ -106,6 +109,7 @@ async def save_state():
             data = {
                 "links": dict(LINKS),
                 "subs": dict(SUBS),
+                "clean_ips": list(CLEAN_IPS),
                 "password_hash": AUTH["password_hash"],
                 "saved_at": datetime.now().isoformat(),
             }
@@ -132,6 +136,8 @@ LINKS: dict = {}
 LINKS_LOCK = asyncio.Lock()
 SUBS: dict = {}
 SUBS_LOCK = asyncio.Lock()
+CLEAN_IPS: list = []
+CLEAN_IPS_LOCK = asyncio.Lock()
 
 # پروتکل‌های پشتیبانی‌شده برای هر کانفیگ
 PROTOCOLS = ("vless-ws", "xhttp-packet-up", "xhttp-stream-up", "xhttp-stream-one")
@@ -307,6 +313,25 @@ def vless_link_for_link(link: dict, uid: str, host: str) -> str:
         port=link.get("port"),
     )
 
+
+def vless_links_with_clean_ips(link: dict, uid: str, host: str) -> list[str]:
+    """برای هر آدرس (host اصلی + همه Clean IPها) یه کانفیگ می‌سازه."""
+    addresses = [host]
+    # اضافه کردن Clean IPها (بدون تکرار)
+    try:
+        for addr in list(CLEAN_IPS):
+            if addr and addr != host and addr not in addresses:
+                addresses.append(addr)
+    except Exception:
+        pass
+    
+    links = []
+    for addr in addresses:
+        l = vless_link_for_link(link, uid, addr)
+        links.append(l)
+    return links
+
+
 def uptime() -> str:
     secs = int(time.time() - stats["start_time"])
     h, m, s = secs // 3600, (secs % 3600) // 60, secs % 60
@@ -450,21 +475,28 @@ async def subscription_single(uuid: str, request: Request):
     if not link or not is_link_allowed(link):
         raise HTTPException(status_code=404, detail="not found or inactive")
     host = get_host(request)
-    vless = vless_link_for_link(link, uuid, host)
-    content = base64.b64encode(vless.encode()).decode()
-    return Response(content=content, media_type="text/plain",
-                    headers={"profile-title": quote(link["label"]), "support-url": ""})
+    # ⭐ همه کانفیگ‌ها (دامنه اصلی + Clean IPها)
+    vless_links = vless_links_with_clean_ips(link, uuid, host)
+    content = base64.b64encode("\n".join(vless_links).encode()).decode()
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "profile-title": quote(link["label"]),
+            "support-url": "",
+            "profile-update-interval": "12",
+        }
+    )
 
 @app.get("/sub-all")
 async def subscription_all(request: Request, _=Depends(require_auth)):
     import base64
     host = get_host(request)
     async with LINKS_LOCK:
-        lines = [
-            vless_link_for_link(d, uid, host)
-            for uid, d in LINKS.items()
-            if is_link_allowed(d)
-        ]
+        lines = []
+        for uid, d in LINKS.items():
+            if is_link_allowed(d):
+                lines.extend(vless_links_with_clean_ips(d, uid, host))
     content = base64.b64encode("\n".join(lines).encode()).decode()
     return Response(content=content, media_type="text/plain")
 
@@ -603,8 +635,8 @@ async def sub_group_subscription(uuid_key: str, request: Request):
         for lid in link_ids:
             link = LINKS.get(lid)
             if link and is_link_allowed(link):
-                lines.append(vless_link_for_link(link, lid, host))
-
+                lines.extend(vless_links_with_clean_ips(link, lid, host))
+                
     content = base64.b64encode("\n".join(lines).encode()).decode()
     return Response(
         content=content,
@@ -656,6 +688,84 @@ async def api_change_password(request: Request, token=Depends(require_auth)):
     await save_state()
     log_activity("auth", "رمز عبور پنل تغییر کرد", "ok")
     return {"ok": True}
+# ── Clean IP API ──────────────────────────────────────────────────────
+@app.get("/api/clean-ips")
+async def list_clean_ips(_=Depends(require_auth)):
+    """لیست آدرس‌های جایگزین (Clean IP)."""
+    async with CLEAN_IPS_LOCK:
+        return {"addresses": list(CLEAN_IPS)}
+
+
+@app.post("/api/clean-ips")
+async def add_clean_ip(request: Request, _=Depends(require_auth)):
+    """اضافه کردن آدرس جایگزین."""
+    body = await request.json()
+    address = (body.get("address") or "").strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="address is required")
+    if not re.match(r'^[a-zA-Z0-9\-_.:]+$', address):
+        raise HTTPException(status_code=400, detail="invalid address format")
+    async with CLEAN_IPS_LOCK:
+        if address in CLEAN_IPS:
+            raise HTTPException(status_code=400, detail="address already exists")
+        CLEAN_IPS.append(address)
+    asyncio.create_task(save_state())
+    log_activity("clean_ip", f"آی‌پی تمیز «{address}» اضافه شد", "ok")
+    return {"ok": True, "addresses": list(CLEAN_IPS)}
+
+
+@app.delete("/api/clean-ips/{index}")
+async def delete_clean_ip(index: int, _=Depends(require_auth)):
+    """حذف یکی از آدرس‌ها بر اساس index."""
+    async with CLEAN_IPS_LOCK:
+        if 0 <= index < len(CLEAN_IPS):
+            removed = CLEAN_IPS.pop(index)
+        else:
+            raise HTTPException(status_code=404, detail="address not found")
+    asyncio.create_task(save_state())
+    log_activity("clean_ip", f"آی‌پی تمیز «{removed}» حذف شد", "warn")
+    return {"ok": True, "addresses": list(CLEAN_IPS)}
+
+
+@app.delete("/api/clean-ips")
+async def delete_all_clean_ips(_=Depends(require_auth)):
+    """حذف همه‌ی آدرس‌ها."""
+    async with CLEAN_IPS_LOCK:
+        count = len(CLEAN_IPS)
+        CLEAN_IPS.clear()
+    asyncio.create_task(save_state())
+    log_activity("clean_ip", f"همه‌ی {count} آی‌پی تمیز حذف شد", "warn")
+    return {"ok": True, "addresses": []}
+
+
+@app.post("/api/clean-ips/import")
+async def import_clean_ips(_=Depends(require_auth)):
+    """ایمپورت از فایل clean_ips.txt (کنار main.py)."""
+    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clean_ips.txt")
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="clean_ips.txt not found next to main.py")
+    added = 0
+    try:
+        async with CLEAN_IPS_LOCK:
+            existing = set(CLEAN_IPS)
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if not re.match(r'^[a-zA-Z0-9\-_.:]+$', line):
+                        continue
+                    if line in existing:
+                        continue
+                    CLEAN_IPS.append(line)
+                    existing.add(line)
+                    added += 1
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"failed to read file: {e}")
+    asyncio.create_task(save_state())
+    log_activity("clean_ip", f"{added} آی‌پی تمیز ایمپورت شد", "ok")
+    return {"ok": True, "added": added, "total": len(CLEAN_IPS), "addresses": list(CLEAN_IPS)}
+
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
 @app.get("/stats")
