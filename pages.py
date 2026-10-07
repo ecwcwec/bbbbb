@@ -1065,6 +1065,27 @@ a{color:inherit;text-decoration:none}
     </div>
   </div>
 </div>
+<div class="modal-bg" id="modal-add-cleanip">
+  <div class="modal-v2">
+    <div class="modal-v2-head">
+      <button class="modal-v2-close" onclick="closeModal('modal-add-cleanip')"><i class="ti ti-x"></i></button>
+      <div class="modal-v2-icon"><i class="ti ti-world-plus"></i></div>
+      <div class="modal-v2-title">افزودن آی‌پی تمیز</div>
+      <div class="modal-v2-sub">آدرس‌ها رو یکی یکی یا همه با هم وارد کن</div>
+    </div>
+    <div class="modal-v2-body">
+      <div class="modal-v2-field">
+        <label><i class="ti ti-world"></i> آدرس‌ها (هر خط یکی)</label>
+        <textarea id="add-cleanip-input" placeholder="104.21.10.1&#10;172.67.10.1&#10;example.com" style="width:100%;padding:10px 13px;border-radius:11px;border:1px solid var(--card-b);background:rgba(0,0,0,.2);color:var(--t1);font-family:ui-monospace,monospace;font-size:12px;outline:none;resize:vertical;min-height:130px"></textarea>
+      </div>
+      <div class="cl"><i class="ti ti-info-circle"></i><span>می‌تونید IP یا دامنه وارد کنید. هر خط یه آدرس جدا.</span></div>
+      <div class="modal-v2-footer">
+        <button class="btn btn-o" onclick="closeModal('modal-add-cleanip')" style="flex:.6">انصراف</button>
+        <button class="btn btn-p" onclick="addCleanIPs()"><i class="ti ti-plus"></i> افزودن</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="modal-edit-link">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('modal-edit-link')"><i class="ti ti-x"></i></button>
@@ -1125,6 +1146,7 @@ a{color:inherit;text-decoration:none}
   <div class="nav-wrap">
     <div class="nav-it on" data-pg="overview"><i class="ti ti-layout-dashboard"></i><span>داشبورد</span></div>
     <div class="nav-it" data-pg="links"><i class="ti ti-users"></i><span>اینباندها</span><span class="nav-badge" id="links-nb">0</span></div>
+    <div class="nav-it" data-pg="cleanip"><i class="ti ti-world"></i><span>آی‌پی تمیز</span><span class="nav-badge" id="clean-ips-nb">0</span></div>
     <div class="nav-it" data-pg="traffic"><i class="ti ti-activity"></i><span>ترافیک</span></div>
     <div class="nav-it" data-pg="cleanip"><i class="ti ti-world"></i><span>آی‌پی تمیز</span></div>
     <div class="nav-it" data-pg="nodes"><i class="ti ti-server-2"></i><span>نودها</span></div>
@@ -1391,6 +1413,33 @@ a{color:inherit;text-decoration:none}
   <div class="card">
     <div class="card-title"><i class="ti ti-folders"></i> لینک سابسکریپشن گروه‌ها</div>
     <div id="sub-groups-list">در حال بارگذاری...</div>
+  </div>
+</section>
+<section class="pg" id="pg-cleanip">
+  <div class="topbar">
+    <div>
+      <div class="tb-title"><i class="ti ti-world"></i> آی‌پی تمیز</div>
+      <div class="tb-sub">آدرس‌های جایگزین که به همه‌ی ساب‌لینک‌ها اضافه می‌شوند</div>
+    </div>
+    <div class="tb-right">
+      <span class="badge bg-blue" id="clean-ips-count">۰ آدرس</span>
+      <button class="btn btn-o btn-sm" onclick="importCleanIPs()"><i class="ti ti-download"></i> ایمپورت از فایل</button>
+      <button class="btn btn-d btn-sm" onclick="deleteAllCleanIPs()"><i class="ti ti-trash"></i> حذف همه</button>
+      <button class="btn btn-p btn-sm" onclick="openModal('modal-add-cleanip')"><i class="ti ti-plus"></i> افزودن</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="cl" style="margin:0">
+      <i class="ti ti-info-circle"></i>
+      <span>هر آدرسی که اینجا اضافه کنید، به‌عنوان یه کانفیگ جدا در ساب‌لینک همه‌ی کاربرا ظاهر می‌شه. اگه دامنه‌ی اصلی بلاک شده باشه، کلاینت می‌تونه از این آدرس‌ها استفاده کنه.</span>
+    </div>
+  </div>
+
+  <div id="clean-ips-list"></div>
+  <div class="empty" id="clean-ips-empty" style="display:none">
+    <i class="ti ti-world-off"></i>
+    <p>هنوز آدرسی اضافه نکردید</p>
   </div>
 </section>
 <section class="pg" id="pg-traffic">
@@ -1793,7 +1842,7 @@ overlay.addEventListener('click',closeSb);
 function navTo(name){
   document.querySelectorAll('.nav-it').forEach(n=>n.classList.toggle('on',n.dataset.pg===name));
   document.querySelectorAll('.pg').forEach(p=>p.classList.toggle('on',p.id==='pg-'+name));
-  const loaders={links:loadLinks,connections:loadConns,errors:loadErrs,subscriptions:loadSubsPage,subgroups:loadSubs,logs:loadActivity};
+  const loaders={links:loadLinks,connections:loadConns,errors:loadErrs,subscriptions:loadSubsPage,subgroups:loadSubs,logs:loadActivity,cleanip:loadCleanIPs};
   if(loaders[name])loaders[name]();
   closeSb();window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -1833,6 +1882,108 @@ function renderErrs(errs){
   if(!errs.length){el.innerHTML='<div style="color:var(--green-t);padding:10px;font-size:12px;display:flex;align-items:center;gap:5px"><i class="ti ti-circle-check"></i> هیچ خطایی نیست</div>';return}
   el.innerHTML=errs.slice().reverse().map(e=>`<div class="erow"><div class="etime"><i class="ti ti-clock"></i>${new Date(e.time).toLocaleString('fa-IR')}</div><div class="emsg">${esc(e.error)}${e.url?' — '+esc(e.url):''}</div></div>`).join('');
 }
+// ═══════════════════════════════════════════════════════════════
+// 🌐 Clean IP Management
+// ═══════════════════════════════════════════════════════════════
+let cleanIPsList = [];
+
+async function loadCleanIPs(){
+  try{
+    const r = await authF('/api/clean-ips');
+    const d = await r.json();
+    cleanIPsList = d.addresses || [];
+    const cnt = document.getElementById('clean-ips-count');
+    const nb = document.getElementById('clean-ips-nb');
+    if(cnt) cnt.textContent = toFa(cleanIPsList.length) + ' آدرس';
+    if(nb) nb.textContent = cleanIPsList.length;
+    renderCleanIPs();
+  }catch(e){console.error('loadCleanIPs:', e)}
+}
+
+function renderCleanIPs(){
+  const el = document.getElementById('clean-ips-list');
+  const em = document.getElementById('clean-ips-empty');
+  if(!el) return;
+  if(!cleanIPsList.length){
+    el.innerHTML = '';
+    if(em) em.style.display = 'block';
+    return;
+  }
+  if(em) em.style.display = 'none';
+  el.innerHTML = cleanIPsList.map((addr, i) => `
+    <div class="cfg-card" style="margin-bottom:8px">
+      <div class="cfg-row" style="padding:12px 16px">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-d);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+          <i class="ti ti-world"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:var(--t1);word-break:break-all">${esc(addr)}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">آدرس #${toFa(i+1)}</div>
+        </div>
+        <button class="btn btn-sm btn-d btn-icon" onclick="deleteCleanIP(${i})" title="حذف"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addCleanIPs(){
+  const inp = document.getElementById('add-cleanip-input');
+  if(!inp) return;
+  const lines = inp.value.split('\n').map(l => l.trim()).filter(l => l);
+  if(!lines.length){ toast('حداقل یه آدرس وارد کنید','err'); return; }
+  
+  let added = 0, failed = 0;
+  for(const addr of lines){
+    try{
+      const r = await authF('/api/clean-ips', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({address: addr})
+      });
+      if(r.ok) added++;
+      else failed++;
+    }catch(e){ failed++; }
+  }
+  
+  inp.value = '';
+  closeModal('modal-add-cleanip');
+  if(added) toast(added + ' آدرس اضافه شد ✓','ok');
+  if(failed) toast(failed + ' آدرس تکراری یا نامعتبر','err');
+  await loadCleanIPs();
+}
+
+async function deleteCleanIP(index){
+  if(!confirm('حذف این آدرس؟')) return;
+  try{
+    const r = await authF('/api/clean-ips/' + index, {method: 'DELETE'});
+    if(!r.ok) throw new Error();
+    toast('حذف شد ✓','ok');
+    await loadCleanIPs();
+  }catch(e){ toast('خطا در حذف','err'); }
+}
+
+async function deleteAllCleanIPs(){
+  if(!cleanIPsList.length){ toast('آدرسی وجود ندارد','err'); return; }
+  if(!confirm('همه‌ی ' + cleanIPsList.length + ' آدرس حذف شود؟')) return;
+  try{
+    const r = await authF('/api/clean-ips', {method: 'DELETE'});
+    if(!r.ok) throw new Error();
+    toast('همه حذف شد','ok');
+    await loadCleanIPs();
+  }catch(e){ toast('خطا','err'); }
+}
+
+async function importCleanIPs(){
+  if(!confirm('ایمپورت از فایل clean_ips.txt ؟')) return;
+  try{
+    const r = await authF('/api/clean-ips/import', {method: 'POST'});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){ toast(d.detail || 'خطا در ایمپورت','err'); return; }
+    toast(d.added + ' آدرس ایمپورت شد ✓','ok');
+    await loadCleanIPs();
+  }catch(e){ toast('خطا در ایمپورت','err'); }
+}
+
 async function loadActivity(){
   try{
     const r=await authF('/api/activity'),d=await r.json();
@@ -2358,7 +2509,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   initCharts();
   document.getElementById('set-host').textContent=location.host;
   document.getElementById('sub-all-url')&&(document.getElementById('sub-all-url').textContent=location.protocol+'//'+location.host+'/sub-all');
-  fetchStats();fetchDefaultVless();loadLinks();loadSubs();
+  fetchStats();fetchDefaultVless();loadLinks();loadSubs();loadCleanIPs();
   setInterval(fetchStats,4000);
   setInterval(()=>{
     if(document.getElementById('pg-links').classList.contains('on'))loadLinks();
