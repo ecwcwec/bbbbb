@@ -708,25 +708,27 @@ async def api_change_password(request: Request, token=Depends(require_auth)):
 async def get_default_connect_ip(_=Depends(require_auth)):
     """IP پیش‌فرض فعلی رو برمی‌گردونه."""
     return {"default_connect_ip": DEFAULT_CONNECT_IP}
+@app.get("/api/default-connect-ip")
+async def get_default_connect_ip(_=Depends(require_auth)):
+    """IP پیش‌فرض فعلی رو برمی‌گردونه."""
+    return {"default_connect_ip": DEFAULT_CONNECT_IP}
 
 
-@app.post("/api/default-connect-ip")
-async def set_default_connect_ip(request: Request, _=Depends(require_auth)):
-    """IP پیش‌فرض رو عوض می‌کنه. خودکار به همه‌ی کانفیگ‌ها اعمال می‌شه."""
+@app.post("/api/default-connect-ip/{index}")
+async def set_default_connect_ip(index: int, _=Depends(require_auth)):
+    """یه IP از لیست Clean IPها رو به‌عنوان پیش‌فرض ست می‌کنه."""
     global DEFAULT_CONNECT_IP
-    body = await request.json()
-    new_ip = (body.get("default_connect_ip") or "").strip()
-    if not new_ip:
-        raise HTTPException(status_code=400, detail="default_connect_ip is required")
-    if not re.match(r'^[a-zA-Z0-9\-_.:]+$', new_ip):
-        raise HTTPException(status_code=400, detail="invalid IP/domain format")
+    async with CLEAN_IPS_LOCK:
+        if index < 0 or index >= len(CLEAN_IPS):
+            raise HTTPException(status_code=404, detail="address not found")
+        new_ip = CLEAN_IPS[index]
     old_ip = DEFAULT_CONNECT_IP
     DEFAULT_CONNECT_IP = new_ip
     asyncio.create_task(save_state())
-    log_activity("settings", f"IP پیش‌فرض از «{old_ip}» به «{new_ip}» تغییر کرد", "ok")
-    return {"ok": True, "default_connect_ip": new_ip, "old": old_ip}
+    log_activity("clean_ip", f"IP پیش‌فرض از «{old_ip}» به «{new_ip}» تغییر کرد", "ok")
+    return {"ok": True, "default_connect_ip": new_ip}
 
-    
+
 # ── Clean IP API ──────────────────────────────────────────────────────
 @app.get("/api/clean-ips")
 async def list_clean_ips(_=Depends(require_auth)):
