@@ -1926,6 +1926,12 @@ async function loadCleanIPs(){
     const r = await authF('/api/clean-ips');
     const d = await r.json();
     cleanIPsList = d.addresses || [];
+    // IP پیش‌فرض رو هم بگیر
+    try{
+      const r2 = await authF('/api/default-connect-ip');
+      const d2 = await r2.json();
+      currentDefaultIP = d2.default_connect_ip || '';
+    }catch(e){ currentDefaultIP = ''; }    
     const cnt = document.getElementById('clean-ips-count');
     const nb = document.getElementById('clean-ips-nb');
     if(cnt) cnt.textContent = toFa(cleanIPsList.length) + ' آدرس';
@@ -1933,6 +1939,8 @@ async function loadCleanIPs(){
     renderCleanIPs();
   }catch(e){console.error('loadCleanIPs:', e)}
 }
+
+let currentDefaultIP = '';
 
 function renderCleanIPs(){
   const el = document.getElementById('clean-ips-list');
@@ -1944,20 +1952,38 @@ function renderCleanIPs(){
     return;
   }
   if(em) em.style.display = 'none';
-  el.innerHTML = cleanIPsList.map((addr, i) => `
-    <div class="cfg-card" style="margin-bottom:8px">
+  el.innerHTML = cleanIPsList.map((addr, i) => {
+    const isDefault = (addr === currentDefaultIP);
+    return `
+    <div class="cfg-card" style="margin-bottom:8px;${isDefault?'border-color:rgba(16,185,129,.5);box-shadow:0 0 20px rgba(16,185,129,.12)':''}">
       <div class="cfg-row" style="padding:12px 16px">
-        <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-d);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
-          <i class="ti ti-world"></i>
+        <div style="width:36px;height:36px;border-radius:10px;background:${isDefault?'var(--green-bg)':'var(--accent-d)'};color:${isDefault?'var(--green-t)':'var(--accent)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">
+          <i class="ti ${isDefault?'ti-circle-check':'ti-world'}"></i>
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:var(--t1);word-break:break-all">${esc(addr)}</div>
-          <div style="font-size:10px;color:var(--t3);margin-top:2px">آدرس #${toFa(i+1)}</div>
+          <div style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:var(--t1);word-break:break-all;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${esc(addr)}
+            ${isDefault?'<span class="badge bg-green" style="font-size:9px;padding:3px 9px"><span class="dot dg pulse"></span> پیش‌فرض</span>':''}
+          </div>
+          <div style="font-size:10px;color:var(--t3);margin-top:3px">آدرس #${toFa(i+1)}</div>
         </div>
-        <button class="btn btn-sm btn-d btn-icon" onclick="deleteCleanIP(${i})" title="حذف"><i class="ti ti-trash"></i></button>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${isDefault?'':`<button class="btn btn-sm btn-g" onclick="setDefaultIP(${i})" title="این رو پیش‌فرض کن" style="white-space:nowrap"><i class="ti ti-star"></i> پیش‌فرض</button>`}
+          <button class="btn btn-sm btn-d btn-icon" onclick="deleteCleanIP(${i})" title="حذف"><i class="ti ti-trash"></i></button>
+        </div>
       </div>
     </div>
-  `).join('');
+  `;}).join('');
+}
+
+async function setDefaultIP(index){
+  try{
+    const r = await authF('/api/default-connect-ip/' + index, {method: 'POST'});
+    const d = await r.json();
+    if(!r.ok){ toast(d.detail || 'خطا','err'); return; }
+    toast('IP پیش‌فرض به «' + d.default_connect_ip + '» تغییر کرد ✓','ok');
+    await loadCleanIPs();
+  }catch(e){ toast('خطا در ست کردن','err'); }
 }
 
 async function addCleanIPs(){
