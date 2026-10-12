@@ -96,6 +96,11 @@ async def load_state():
             SUBS.update(data.get("subs", {}))
             CLEAN_IPS.clear()
             CLEAN_IPS.extend(data.get("clean_ips", []))
+             # IP پیش‌فرض
+            global DEFAULT_CONNECT_IP
+            saved_default_ip = data.get("default_connect_ip")
+            if saved_default_ip:
+                DEFAULT_CONNECT_IP = saved_default_ip           
             if "password_hash" in data:
                 AUTH["password_hash"] = data["password_hash"]
             logger.info(f"State loaded: {len(LINKS)} links, {len(SUBS)} subs, {len(CLEAN_IPS)} clean IPs")
@@ -110,6 +115,7 @@ async def save_state():
                 "links": dict(LINKS),
                 "subs": dict(SUBS),
                 "clean_ips": list(CLEAN_IPS),
+                "default_connect_ip": DEFAULT_CONNECT_IP,                
                 "password_hash": AUTH["password_hash"],
                 "saved_at": datetime.now().isoformat(),
             }
@@ -155,7 +161,7 @@ DEFAULT_ALPN_BY_PROTOCOL = {
     "xhttp-stream-one": "h2,http/1.1",
 }
 DEFAULT_PORT = 443
-DEFAULT_CONNECT_IP = "69.46.46.240"
+DEFAULT_CONNECT_IP = "69.46.46.240"  # مقدار پیش‌فرض، از JSON override می‌شه
 MIN_PORT, MAX_PORT = 1, 65535
 
 # محدودیت سرعت (0 = نامحدود). واحد ذخیره‌سازی داخلی همیشه بایت‌بر‌ثانیه است.
@@ -695,6 +701,32 @@ async def api_change_password(request: Request, token=Depends(require_auth)):
     await save_state()
     log_activity("auth", "رمز عبور پنل تغییر کرد", "ok")
     return {"ok": True}
+
+    
+# ── Default Connect IP ────────────────────────────────────────────────
+@app.get("/api/default-connect-ip")
+async def get_default_connect_ip(_=Depends(require_auth)):
+    """IP پیش‌فرض فعلی رو برمی‌گردونه."""
+    return {"default_connect_ip": DEFAULT_CONNECT_IP}
+
+
+@app.post("/api/default-connect-ip")
+async def set_default_connect_ip(request: Request, _=Depends(require_auth)):
+    """IP پیش‌فرض رو عوض می‌کنه. خودکار به همه‌ی کانفیگ‌ها اعمال می‌شه."""
+    global DEFAULT_CONNECT_IP
+    body = await request.json()
+    new_ip = (body.get("default_connect_ip") or "").strip()
+    if not new_ip:
+        raise HTTPException(status_code=400, detail="default_connect_ip is required")
+    if not re.match(r'^[a-zA-Z0-9\-_.:]+$', new_ip):
+        raise HTTPException(status_code=400, detail="invalid IP/domain format")
+    old_ip = DEFAULT_CONNECT_IP
+    DEFAULT_CONNECT_IP = new_ip
+    asyncio.create_task(save_state())
+    log_activity("settings", f"IP پیش‌فرض از «{old_ip}» به «{new_ip}» تغییر کرد", "ok")
+    return {"ok": True, "default_connect_ip": new_ip, "old": old_ip}
+
+    
 # ── Clean IP API ──────────────────────────────────────────────────────
 @app.get("/api/clean-ips")
 async def list_clean_ips(_=Depends(require_auth)):
