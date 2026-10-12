@@ -1627,6 +1627,40 @@ a{color:inherit;text-decoration:none}
     </div>
   </div>
     <!-- ═══════════════════════════════════════════════════════
+       🌐 IP پیش‌فرض کانفیگ‌ها
+       ═══════════════════════════════════════════════════════ -->
+  <div class="node-panel" style="margin-top:14px">
+    <div class="node-hero">
+      <div class="node-hero-icon"><i class="ti ti-world-pin"></i></div>
+      <div class="node-hero-text">
+        <div class="node-hero-title">IP پیش‌فرض کانفیگ‌ها</div>
+        <div class="node-hero-sub">این IP به‌جای دامنه در تمام کانفیگ‌ها استفاده می‌شه (به‌عنوان address اتصال)</div>
+      </div>
+    </div>
+    <div class="node-body">
+      <div class="node-row">
+        <div class="node-block">
+          <label class="node-label">🌐 IP یا دامنه پیش‌فرض</label>
+          <input class="node-input" type="text" id="default-connect-ip" placeholder="69.46.46.240" style="font-family:ui-monospace,monospace">
+          <div class="node-hint">
+            <i class="ti ti-info-circle"></i>
+            SNI و Host header همچنان دامنه اصلی می‌مونن. فقط آدرس اتصال (address) با این مقدار ساخته می‌شه.
+          </div>
+        </div>
+      </div>
+      <div class="node-footer" style="justify-content:space-between">
+        <div style="font-size:11px;color:var(--t3);display:flex;align-items:center;gap:6px">
+          <i class="ti ti-refresh" style="color:var(--accent)"></i>
+          تغییرات خودکار در ساب‌لینک همه کاربران اعمال می‌شه (بدون نیاز به ساخت مجدد کانفیگ)
+        </div>
+        <button class="node-save-btn" onclick="saveDefaultConnectIP()">
+          <i class="ti ti-device-floppy"></i>
+          ذخیره IP
+        </button>
+      </div>
+    </div>
+  </div>
+    <!-- ═══════════════════════════════════════════════════════
        🌐 نقش پنل (Master / Node)
        ═══════════════════════════════════════════════════════ -->
   <div class="node-panel" style="margin-top:14px">
@@ -2524,6 +2558,38 @@ document.addEventListener('DOMContentLoaded',async()=>{
 // 🌐 Node Settings — تنظیمات Master/Node
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// 🌐 Default Connect IP
+// ═══════════════════════════════════════════════════════════════
+
+async function loadDefaultConnectIP(){
+  try{
+    const r = await authF('/api/default-connect-ip');
+    if(!r.ok) return;
+    const d = await r.json();
+    const inp = document.getElementById('default-connect-ip');
+    if(inp) inp.value = d.default_connect_ip || '';
+  }catch(e){ console.error('loadDefaultConnectIP:', e); }
+}
+
+async function saveDefaultConnectIP(){
+  const inp = document.getElementById('default-connect-ip');
+  if(!inp) return;
+  const newIP = inp.value.trim();
+  if(!newIP){ toast('IP یا دامنه رو وارد کن','err'); return; }
+  
+  try{
+    const r = await authF('/api/default-connect-ip', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ default_connect_ip: newIP })
+    });
+    const d = await r.json();
+    if(!r.ok){ toast(d.detail || 'خطا','err'); return; }
+    toast('IP پیش‌فرض به «' + d.default_connect_ip + '» تغییر کرد ✓','ok');
+  }catch(e){ toast('خطا در ذخیره','err'); }
+}
+
 async function loadNodeSettings(){
   try{
     const r=await authF('/api/panel/info');
@@ -2628,6 +2694,7 @@ if(_origNavTo){
 }
 
 // لود اولیه
+setTimeout(loadDefaultConnectIP, 500);
 setTimeout(loadNodeSettings, 500);
 
 </script>
